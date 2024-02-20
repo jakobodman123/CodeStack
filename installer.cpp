@@ -1,4 +1,14 @@
+const char* cdCmd = "cd /d C:\\ProgramData\\reconfig";
 
+    // 7-Zip command to zip the folders and file without including the parent directory
+    const char* zipCmd = "7z a -tzip output.zip Computer\\* Ca\\* text.csv";
+
+    // Execute the commands
+    if (system(cdCmd) == 0 && system(zipCmd) == 0) {
+        std::cout << "Zip operation successful." << std::endl;
+    } else {
+        std::cerr << "Zip operation failed." << std::endl;
+    }
 #include <cstdlib> // For system()
 #include <iostream>
 
