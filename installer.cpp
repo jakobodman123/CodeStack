@@ -1,5 +1,27 @@
-std::string basePath = R"(C:\path\to\)"; // Base path where the file and folders are located std::string fileToZip = "example.txt"; // The specific file you want to zip std::string folder1ToZip = "folder1"; // The first folder you want to zip std::string folder2ToZip = "folder2"; // The second folder you want to zip std::string zipPath = R"(C:\path\to\destination\archive.zip)"; // Destination zip file path // Construct the PowerShell command std::string command = "powershell -command \"Compress-Archive -Path '" + basePath + fileToZip + "', '" + basePath + folder1ToZip + "', '" + basePath + folder2ToZip + "' -DestinationPath '" + zipPath + "'\""; // Execute the command
-const char* cmd = "powershell -Command \"Compress-Archive -Path folder1, folder2, file.txt -DestinationPath output.zip\"";
+
+#include <cstdlib> // For system()
+#include <iostream>
+
+int main() {
+    // Change directory to the parent of the folders and file
+    int result = system("cd /d C:\\ProgramData\\reconfig");
+
+    // Check if directory change was successful
+    if(result != 0) {
+        std::cerr << "Failed to change directory. Make sure the path is correct." << std::endl;
+        return 1; // Exit if directory change failed
+    }
+
+    // Zip the contents without including the parent directory
+    result = system("powershell -Command \"Compress-Archive -Path Computer, Ca, text.csv -DestinationPath C:\\ProgramData\\reconfig\\output.zip\"");
+
+    // Check the result of the zip operation
+    if(result == 0) {
+        std::cout << "Zip operation successful." << std::endl;
+    } else {
+        std::cerr << "Zip operation failed." << std::endl;
+        return 1; // Exit if zip operation failed
+    }
 
 #include <QDialog>
 #include <QStackedWidget>
