@@ -113,3 +113,47 @@ void InstallerDialog::goToPreviousStep() {
         stackedWidget->setCurrentIndex(currentStep);
     }
 }
+
+void YourExistingClass::showInstallerDialog() {
+    QDialog *dialog = new QDialog;
+    QStackedWidget *stackedWidget = new QStackedWidget(dialog);
+
+    // Step 1: Name input
+    QWidget *stepOneWidget = new QWidget;
+    QVBoxLayout *stepOneLayout = new QVBoxLayout(stepOneWidget);
+    QLineEdit *nameLineEdit = new QLineEdit;
+    stepOneLayout->addWidget(nameLineEdit);
+    stackedWidget->addWidget(stepOneWidget);
+
+    // Step 2: File selection
+    QWidget *stepTwoWidget = new QWidget;
+    QVBoxLayout *stepTwoLayout = new QVBoxLayout(stepTwoWidget);
+    QPushButton *fileChooseButton = new QPushButton("Choose File");
+    QObject::connect(fileChooseButton, &QPushButton::clicked, [dialog]() {
+        QFileDialog::getOpenFileName(dialog, "Select File");
+    });
+    stepTwoLayout->addWidget(fileChooseButton);
+    stackedWidget->addWidget(stepTwoWidget);
+
+    // Additional steps (3 and 4) setup...
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
+    mainLayout->addWidget(stackedWidget);
+
+    // Navigation and action buttons
+    QPushButton *prevButton = new QPushButton("Previous");
+    QPushButton *nextButton = new QPushButton("Next");
+    QPushButton *okButton = new QPushButton("Ok");
+
+    // Connect signals and slots for buttons...
+
+    QHBoxLayout *buttonLayout = new QHBoxLayout;
+    buttonLayout->addWidget(prevButton);
+    buttonLayout->addWidget(nextButton);
+    mainLayout->addLayout(buttonLayout);
+    mainLayout->addWidget(okButton);
+
+    // Show the dialog
+    dialog->setLayout(mainLayout);
+    dialog->exec();
+}
