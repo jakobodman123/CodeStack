@@ -157,3 +157,6 @@ void YourExistingClass::showInstallerDialog() {
     dialog->setLayout(mainLayout);
     dialog->exec();
 }
+
+
+std::string command = "powershell -command \"& {cd '" + folderPath + "'; Compress-Archive -Path .\\* -DestinationPath '" + zipPath + "'}\""
