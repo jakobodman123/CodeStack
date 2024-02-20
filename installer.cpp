@@ -1,5 +1,5 @@
 std::string basePath = R"(C:\path\to\)"; // Base path where the file and folders are located std::string fileToZip = "example.txt"; // The specific file you want to zip std::string folder1ToZip = "folder1"; // The first folder you want to zip std::string folder2ToZip = "folder2"; // The second folder you want to zip std::string zipPath = R"(C:\path\to\destination\archive.zip)"; // Destination zip file path // Construct the PowerShell command std::string command = "powershell -command \"Compress-Archive -Path '" + basePath + fileToZip + "', '" + basePath + folder1ToZip + "', '" + basePath + folder2ToZip + "' -DestinationPath '" + zipPath + "'\""; // Execute the command
-
+const char* cmd = "powershell -Command \"Compress-Archive -Path folder1, folder2, file.txt -DestinationPath output.zip\"";
 
 #include <QDialog>
 #include <QStackedWidget>
