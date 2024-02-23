@@ -1,3 +1,43 @@
+class MyDialog : public QDialog {
+public:
+    MyDialog(QWidget *parent = nullptr) : QDialog(parent) {
+        QHBoxLayout *mainLayout = new QHBoxLayout(this);
+
+        // Side panel setup
+        QVBoxLayout *sidePanelLayout = new QVBoxLayout;
+
+        // Main content setup
+        QStackedWidget *mainContent = new QStackedWidget;
+
+        // Create buttons for the side panel and pages for the main content
+        for (int i = 1; i <= 5; ++i) {
+            QPushButton *tabButton = new QPushButton(QString("Tab %1").arg(i));
+            QLabel *pageLabel = new QLabel(QString("Content for Tab %1").arg(i));
+
+            QWidget *pageWidget = new QWidget; // Container for this page's content
+            QVBoxLayout *pageLayout = new QVBoxLayout(pageWidget);
+            pageLayout->addWidget(pageLabel);
+            pageWidget->setLayout(pageLayout);
+
+            mainContent->addWidget(pageWidget); // Add the page to the stacked widget
+
+            sidePanelLayout->addWidget(tabButton); // Add button to the side panel
+
+            // Connect button click to change the main content
+            connect(tabButton, &QPushButton::clicked, [mainContent, i]() {
+                mainContent->setCurrentIndex(i - 1); // Indexes are 0-based
+            });
+        }
+
+        sidePanelLayout->addStretch(1); // Push all buttons to the top
+
+        mainLayout->addLayout(sidePanelLayout);
+        mainLayout->addWidget(mainContent, 1); // Main content takes the rest of the space
+    }
+};
+
+
+
 const char* cdCmd = "cd /d C:\\ProgramData\\reconfig";
 
     // 7-Zip command to zip the folders and file without including the parent directory
