@@ -235,3 +235,62 @@ void YourExistingClass::showInstallerDialog() {
 std::string basePath = R"(C:\path\to\)"; // Base path where the file and folders are located std::string fileToZip = "example.txt"; // The specific file you want to zip std::string folder1ToZip = "folder1"; // The first folder you want to zip std::string folder2ToZip = "folder2"; // The second folder you want to zip std::string zipPath = R"(C:\path\to\destination\archive.zip)"; // Destination zip file path // Construct the PowerShell command std::string command = "powershell -command \"Compress-Archive -Path '" + basePath + fileToZip + "', '" + basePath + folder1ToZip + "', '" + basePath + folder2ToZip + "' -DestinationPath '" + zipPath + "'\""; // Execute the command
 
 std::string command = "powershell -command \"& {cd '" + folderPath + "'; Compress-Archive -Path .\\* -DestinationPath '" + zipPath + "'}\""
+#include <windows.h>
+#include <WtsApi32.h>
+#include <iostream>
+
+#pragma comment(lib, "Wtsapi32.lib")
+
+BOOL ImpersonateActiveUserAndExecute(std::function<void()> func) {
+    DWORD sessionId = WTSGetActiveConsoleSessionId(); // Get the active session ID
+    HANDLE hToken = NULL;
+    HANDLE hTokenDup = NULL;
+
+    // Obtain the user token for the session
+    if (!WTSQueryUserToken(sessionId, &hToken)) {
+        std::cerr << "WTSQueryUserToken failed with error " << GetLastError() << std::endl;
+        return FALSE;
+    }
+
+    // Duplicate the token to get an impersonation token
+    if (!DuplicateTokenEx(hToken, MAXIMUM_ALLOWED, NULL, SecurityImpersonation, TokenImpersonation, &hTokenDup)) {
+        std::cerr << "DuplicateTokenEx failed with error " << GetLastError() << std::endl;
+        CloseHandle(hToken);
+        return FALSE;
+    }
+
+    // Impersonate the user
+    if (!ImpersonateLoggedOnUser(hTokenDup)) {
+        std::cerr << "ImpersonateLoggedOnUser failed with error " << GetLastError() << std::endl;
+        CloseHandle(hTokenDup);
+        CloseHandle(hToken);
+        return FALSE;
+    }
+
+    // Execute the function as the impersonated user
+    func();
+
+    // Revert to self
+    RevertToSelf();
+
+    // Cleanup
+    CloseHandle(hTokenDup);
+    CloseHandle(hToken);
+
+    return TRUE;
+}
+
+void AccessUserProfile() {
+    DWORD bufferSize = MAX_PATH;
+    TCHAR userProfile[MAX_PATH];
+    if (GetEnvironmentVariable("USERPROFILE", userProfile, bufferSize)) {
+        std::wcout << L"USERPROFILE: " << userProfile << std::endl;
+    } else {
+        std::cerr << "Failed to get USERPROFILE" << std::endl;
+    }
+}
+
+int main() {
+    ImpersonateActiveUserAndExecute(AccessUserProfile);
+    return 0;
+}
