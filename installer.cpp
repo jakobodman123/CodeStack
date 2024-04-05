@@ -294,3 +294,43 @@ int main() {
     ImpersonateActiveUserAndExecute(AccessUserProfile);
     return 0;
 }
+
+#include <windows.h>
+
+int main() {
+    // Handle for the event log
+    HANDLE hEventLog = NULL;
+
+    // Register the event source
+    hEventLog = RegisterEventSource(NULL, TEXT("vpntls"));
+
+    if (hEventLog != NULL) {
+        // Define your message
+        LPCTSTR lpStrings[1] = { TEXT("Example event log message from vpntls.") };
+
+        // Report the event
+        if (!ReportEvent(hEventLog,           // Event log handle
+                         EVENTLOG_INFORMATION_TYPE, // Event type
+                         0,                  // Event category
+                         0,                  // Event identifier
+                         NULL,               // No user security identifier
+                         1,                  // Number of substitution strings
+                         0,                  // No data
+                         lpStrings,          // Pointer to strings
+                         NULL)) {            // No data
+            // Handle error
+            DWORD dwError = GetLastError();
+            // Add error handling code here
+        }
+
+        // Deregister the event source
+        DeregisterEventSource(hEventLog);
+    } else {
+        // Handle error if RegisterEventSource fails
+        DWORD dwError = GetLastError();
+        // Add error handling code here
+    }
+
+    return 0;
+}
+
