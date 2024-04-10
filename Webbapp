@@ -55,3 +55,34 @@ public class TcpListenerService
         tcpListener?.Stop();
     }
 }
+
+using System.Web;
+// Ensure you have the correct using statement for your TcpListenerService's namespace
+using YourProjectNamespace.Services; 
+
+public class Global : HttpApplication
+{
+    private static TcpListenerService tcpListenerService = new TcpListenerService();
+
+    protected void Application_Start(object sender, EventArgs e)
+    {
+        // Start the TCP listener when the application starts
+        tcpListenerService.StartListener();
+
+        // Other startup tasks...
+        RouteConfig.RegisterRoutes(RouteTable.Routes);
+        BundleConfig.RegisterBundles(BundleTable.Bundles);
+        // Add any other necessary startup code here (e.g., database initialization, logging setup, etc.)
+    }
+
+    protected void Application_End(object sender, EventArgs e)
+    {
+        // Stop the TCP listener when the application ends
+        tcpListenerService.StopListener();
+
+        // Any other cleanup code can go here
+    }
+
+    // Other global application event handlers if necessary...
+}
+
