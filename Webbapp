@@ -1,0 +1,57 @@
+using System;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading.Tasks;
+
+public class TcpListenerService
+{
+    private TcpListener tcpListener;
+    private bool isRunning = false;
+
+    public void StartListener()
+    {
+        tcpListener = new TcpListener(IPAddress.Any, 7777);
+        tcpListener.Start();
+        isRunning = true;
+
+        Task.Run(() => ListenForConnections());
+    }
+
+    private void ListenForConnections()
+    {
+        try
+        {
+            while (isRunning)
+            {
+                TcpClient client = tcpListener.AcceptTcpClient();
+                Task.Run(() => HandleConnection(client));
+            }
+        }
+        catch (SocketException ex)
+        {
+            // Handle exception (log or ignore if stopping the listener)
+        }
+        finally
+        {
+            tcpListener?.Stop();
+        }
+    }
+
+    private void HandleConnection(TcpClient client)
+    {
+        using (client)
+        using (NetworkStream stream = client.GetStream())
+        using (StreamReader reader = new StreamReader(stream))
+        {
+            string message = reader.ReadToEnd();
+            // Process the message here. For example, update some data or trigger an event.
+        }
+    }
+
+    public void StopListener()
+    {
+        isRunning = false;
+        tcpListener?.Stop();
+    }
+}
