@@ -1,3 +1,87 @@
+using System;
+using System.IO;
+using System.Net;
+using System.Threading;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Thread serverThread = new Thread(new ThreadStart(StartHttpServer));
+        serverThread.Start();
+        Console.WriteLine("HTTP Server is running. Press any key to quit.");
+        Console.ReadKey();
+    }
+
+    static void StartHttpServer()
+    {
+        string url = "http://localhost:8080/";
+        string basePath = @"C:\Users\YourUsername\Desktop"; // Ensure this path is correctly set to your needs
+
+        using (HttpListener listener = new HttpListener())
+        {
+            listener.Prefixes.Add(url);
+            listener.Start();
+            Console.WriteLine("Listening on " + url);
+
+            while (true)
+            {
+                try
+                {
+                    HttpListenerContext context = listener.GetContext();
+                    ServeFile(context, basePath);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error: " + ex.Message);
+                }
+            }
+        }
+    }
+
+    static void ServeFile(HttpListenerContext context, string basePath)
+    {
+        string requestedFile = context.Request.Url.AbsolutePath.TrimStart('/');
+        string filePath = Path.Combine(basePath, requestedFile);
+        filePath = Path.GetFullPath(filePath);  // To avoid security issues with ".." paths
+
+        if (!filePath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.StatusCode = 400; // Bad Request
+            context.Response.Close();
+            return;
+        }
+
+        if (File.Exists(filePath))
+        {
+            byte[] buffer = File.ReadAllBytes(filePath);
+            context.Response.ContentType = GetMimeType(Path.GetExtension(filePath));
+            context.Response.ContentLength64 = buffer.Length;
+            context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+        }
+        else
+        {
+            context.Response.StatusCode = 404; // Not Found
+        }
+        context.Response.Close();
+    }
+
+    static string GetMimeType(string extension)
+    {
+        switch (extension.ToLower())
+        {
+            case ".html": return "text/html";
+            case ".css": return "text/css";
+            case ".js": return "application/javascript";
+            case ".png": return "image/png";
+            case ".jpg": case ".jpeg": return "image/jpeg";
+            case ".gif": return "image/gif";
+            default: return "application/octet-stream";
+        }
+    }
+}
+
+
 https://chat.openai.com/share/87b856da-91bb-454a-a660-233b1f5920c6
 https://chat.openai.com/share/cb227437-d123-4023-8cb0-c9e3087edff0
 using System;
