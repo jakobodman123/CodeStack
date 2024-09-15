@@ -6,7 +6,19 @@ using System.IO;
 public partial class VpnTlsService : ServiceBase
 {
     private Process openVpnProcess;
-    private string configFilePath = @"C:\path\to\your\config.ovpn"; // Hardcoded path to your .ovpn file
+    
+    // List of possible OpenVPN executable paths
+    private string[] openVpnExePaths = 
+    {
+        @"C:\Program Files\OpenVPN\bin\openvpn.exe",
+        @"C:\Program Files (x86)\OpenVPN\bin\openvpn.exe",
+        @"D:\OpenVPN\bin\openvpn.exe",
+        @"E:\Programs\OpenVPN\openvpn.exe"
+    };
+
+    // Hardcoded path to your .ovpn file
+    private string configFilePath = @"C:\path\to\your\config.ovpn"; 
+    
     private string[] filterStrings = { "connected", "disconnected", "error" }; // Strings to filter for
 
     public VpnTlsService()
@@ -39,8 +51,17 @@ public partial class VpnTlsService : ServiceBase
             return;
         }
 
+        // Find the OpenVPN executable in one of the possible paths
+        string openVpnExePath = FindOpenVpnExecutable();
+        if (openVpnExePath == null)
+        {
+            EventLog.WriteEntry("OpenVPN executable not found in any of the specified paths.", EventLogEntryType.Error);
+            this.Stop();
+            return;
+        }
+
         // Start OpenVPN process with the provided .ovpn config
-        StartOpenVpnProcess();
+        StartOpenVpnProcess(openVpnExePath);
     }
 
     protected override void OnStop()
@@ -57,11 +78,24 @@ public partial class VpnTlsService : ServiceBase
         base.OnStop();
     }
 
-    private void StartOpenVpnProcess()
+    private string FindOpenVpnExecutable()
+    {
+        foreach (var path in openVpnExePaths)
+        {
+            if (File.Exists(path))
+            {
+                EventLog.WriteEntry($"OpenVPN executable found at {path}.", EventLogEntryType.Information);
+                return path;
+            }
+        }
+        return null; // Return null if no executable is found
+    }
+
+    private void StartOpenVpnProcess(string openVpnExePath)
     {
         // Set up the OpenVPN process
         openVpnProcess = new Process();
-        openVpnProcess.StartInfo.FileName = "openvpn"; // Assumes OpenVPN is in PATH
+        openVpnProcess.StartInfo.FileName = openVpnExePath; // Full path to OpenVPN executable
         openVpnProcess.StartInfo.Arguments = $"--config \"{configFilePath}\"";
         openVpnProcess.StartInfo.UseShellExecute = false;
         openVpnProcess.StartInfo.RedirectStandardOutput = true;
