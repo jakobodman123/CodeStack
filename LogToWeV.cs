@@ -1,22 +1,21 @@
 using System;
-using System.IO;
-using System.ServiceProcess;
 using System.Diagnostics;
+using System.ServiceProcess;
+using System.IO;
 
-public class OpenVpnService : ServiceBase
+public partial class VpnTlsService : ServiceBase
 {
-    private string configFilePath;
-    private FileSystemWatcher logWatcher;
+    private Process openVpnProcess;
+    private string configFilePath = @"C:\path\to\your\config.ovpn"; // Hardcoded path to your .ovpn file
     private string[] filterStrings = { "connected", "disconnected", "error" }; // Strings to filter for
 
-    public OpenVpnService(string configFile)
+    public VpnTlsService()
     {
-        this.ServiceName = "OpenVpnService";
+        this.ServiceName = "VpnTlsService";
         this.EventLog.Source = this.ServiceName;
         this.CanStop = true;
         this.CanPauseAndContinue = false;
         this.AutoLog = true;
-        this.configFilePath = configFile;
 
         // Create the event source if it doesn't exist
         if (!EventLog.SourceExists(this.ServiceName))
@@ -32,16 +31,16 @@ public class OpenVpnService : ServiceBase
         // Log service start
         EventLog.WriteEntry("Service started.", EventLogEntryType.Information);
 
-        // Start watching the log file (you can replace this with actual OpenVPN log process if required)
-        string logFilePath = Path.Combine(Path.GetDirectoryName(configFilePath), "openvpn.log");
-        logWatcher = new FileSystemWatcher(Path.GetDirectoryName(logFilePath))
+        // Check if the .ovpn file exists
+        if (!File.Exists(configFilePath))
         {
-            Filter = Path.GetFileName(logFilePath),
-            NotifyFilter = NotifyFilters.LastWrite
-        };
+            EventLog.WriteEntry($"No .ovpn file found at {configFilePath}.", EventLogEntryType.Error);
+            this.Stop();
+            return;
+        }
 
-        logWatcher.Changed += OnLogFileChanged;
-        logWatcher.EnableRaisingEvents = true;
+        // Start OpenVPN process with the provided .ovpn config
+        StartOpenVpnProcess();
     }
 
     protected override void OnStop()
@@ -49,37 +48,53 @@ public class OpenVpnService : ServiceBase
         // Log service stop
         EventLog.WriteEntry("Service stopped.", EventLogEntryType.Information);
 
-        logWatcher.EnableRaisingEvents = false;
-        logWatcher.Dispose();
+        // Stop OpenVPN process if it's running
+        if (openVpnProcess != null && !openVpnProcess.HasExited)
+        {
+            openVpnProcess.Kill();
+        }
+
         base.OnStop();
     }
 
-    private void OnLogFileChanged(object sender, FileSystemEventArgs e)
+    private void StartOpenVpnProcess()
     {
-        // Read the log file and filter for specific strings
-        string[] logLines = File.ReadAllLines(e.FullPath);
-        foreach (var line in logLines)
+        // Set up the OpenVPN process
+        openVpnProcess = new Process();
+        openVpnProcess.StartInfo.FileName = "openvpn"; // Assumes OpenVPN is in PATH
+        openVpnProcess.StartInfo.Arguments = $"--config \"{configFilePath}\"";
+        openVpnProcess.StartInfo.UseShellExecute = false;
+        openVpnProcess.StartInfo.RedirectStandardOutput = true;
+        openVpnProcess.StartInfo.RedirectStandardError = true;
+        openVpnProcess.OutputDataReceived += new DataReceivedEventHandler(OpenVpnOutputHandler);
+        openVpnProcess.ErrorDataReceived += new DataReceivedEventHandler(OpenVpnOutputHandler);
+
+        openVpnProcess.Start();
+
+        // Start reading the output asynchronously
+        openVpnProcess.BeginOutputReadLine();
+        openVpnProcess.BeginErrorReadLine();
+    }
+
+    private void OpenVpnOutputHandler(object sendingProcess, DataReceivedEventArgs outLine)
+    {
+        if (!string.IsNullOrEmpty(outLine.Data))
         {
+            // Filter the output based on the specified strings
             foreach (var filter in filterStrings)
             {
-                if (line.Contains(filter))
+                if (outLine.Data.Contains(filter))
                 {
-                    EventLog.WriteEntry($"Filtered log event: {line}", EventLogEntryType.Information);
+                    EventLog.WriteEntry($"Filtered OpenVPN event: {outLine.Data}", EventLogEntryType.Information);
                     break;
                 }
             }
         }
     }
 
-    public static void Main(string[] args)
+    public static void Main()
     {
-        if (args.Length != 1)
-        {
-            Console.WriteLine("Please provide the OpenVPN config file path as an argument.");
-            return;
-        }
-
-        // Create and run the service
-        ServiceBase.Run(new OpenVpnService(args[0]));
+        // Create and run the service without needing a config file argument
+        ServiceBase.Run(new VpnTlsService());
     }
 }
