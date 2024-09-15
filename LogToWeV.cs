@@ -2,24 +2,13 @@ using System;
 using System.Diagnostics;
 using System.ServiceProcess;
 using System.IO;
+using System.Collections.Generic;
 
 public partial class VpnTlsService : ServiceBase
 {
-    private Process openVpnProcess;
-    
-    // List of possible OpenVPN executable paths
-    private string[] openVpnExePaths = 
-    {
-        @"C:\Program Files\OpenVPN\bin\openvpn.exe",
-        @"C:\Program Files (x86)\OpenVPN\bin\openvpn.exe",
-        @"D:\OpenVPN\bin\openvpn.exe",
-        @"E:\Programs\OpenVPN\openvpn.exe"
-    };
-
-    // Hardcoded path to your .ovpn file
-    private string configFilePath = @"C:\path\to\your\config.ovpn"; 
-    
-    private string[] filterStrings = { "connected", "disconnected", "error" }; // Strings to filter for
+    private List<Process> openVpnProcesses = new List<Process>(); // Store all OpenVPN processes
+    private string configFolderPath = @"C:\path\to\config\folder"; // Path to folder containing .ovpn files
+    private string[] filterStrings = { "connected", "disconnected", "error" }; // Strings to filter for in logs
 
     public VpnTlsService()
     {
@@ -29,7 +18,6 @@ public partial class VpnTlsService : ServiceBase
         this.CanPauseAndContinue = false;
         this.AutoLog = true;
 
-        // Create the event source if it doesn't exist
         if (!EventLog.SourceExists(this.ServiceName))
         {
             EventLog.CreateEventSource(this.ServiceName, "Application");
@@ -39,82 +27,84 @@ public partial class VpnTlsService : ServiceBase
     protected override void OnStart(string[] args)
     {
         base.OnStart(args);
-
-        // Log service start
         EventLog.WriteEntry("Service started.", EventLogEntryType.Information);
 
-        // Check if the .ovpn file exists
-        if (!File.Exists(configFilePath))
+        if (!Directory.Exists(configFolderPath))
         {
-            EventLog.WriteEntry($"No .ovpn file found at {configFilePath}.", EventLogEntryType.Error);
+            EventLog.WriteEntry($"Config folder not found at {configFolderPath}.", EventLogEntryType.Error);
             this.Stop();
             return;
         }
 
-        // Find the OpenVPN executable in one of the possible paths
-        string openVpnExePath = FindOpenVpnExecutable();
-        if (openVpnExePath == null)
+        // Find all .ovpn files in the config folder
+        string[] ovpnFiles = Directory.GetFiles(configFolderPath, "*.ovpn");
+        if (ovpnFiles.Length == 0)
         {
-            EventLog.WriteEntry("OpenVPN executable not found in any of the specified paths.", EventLogEntryType.Error);
+            EventLog.WriteEntry("No .ovpn files found.", EventLogEntryType.Error);
             this.Stop();
             return;
         }
 
-        // Start OpenVPN process with the provided .ovpn config
-        StartOpenVpnProcess(openVpnExePath);
+        // Start OpenVPN process for each .ovpn file
+        foreach (var ovpnFile in ovpnFiles)
+        {
+            StartOpenVpnProcess(ovpnFile);
+        }
     }
 
     protected override void OnStop()
     {
-        // Log service stop
         EventLog.WriteEntry("Service stopped.", EventLogEntryType.Information);
 
-        // Stop OpenVPN process if it's running
-        if (openVpnProcess != null && !openVpnProcess.HasExited)
+        // Stop all running OpenVPN processes
+        foreach (var process in openVpnProcesses)
         {
-            openVpnProcess.Kill();
+            if (process != null && !process.HasExited)
+            {
+                process.Kill();
+            }
         }
 
         base.OnStop();
     }
 
-    private string FindOpenVpnExecutable()
+    private void StartOpenVpnProcess(string ovpnFile)
     {
-        foreach (var path in openVpnExePaths)
+        string openVpnExePath = FindOpenVpnExecutable();
+        if (openVpnExePath == null)
         {
-            if (File.Exists(path))
-            {
-                EventLog.WriteEntry($"OpenVPN executable found at {path}.", EventLogEntryType.Information);
-                return path;
-            }
+            EventLog.WriteEntry("OpenVPN executable not found.", EventLogEntryType.Error);
+            return;
         }
-        return null; // Return null if no executable is found
-    }
 
-    private void StartOpenVpnProcess(string openVpnExePath)
-    {
-        // Set up the OpenVPN process
-        openVpnProcess = new Process();
-        openVpnProcess.StartInfo.FileName = openVpnExePath; // Full path to OpenVPN executable
-        openVpnProcess.StartInfo.Arguments = $"--config \"{configFilePath}\"";
-        openVpnProcess.StartInfo.UseShellExecute = false;
-        openVpnProcess.StartInfo.RedirectStandardOutput = true;
-        openVpnProcess.StartInfo.RedirectStandardError = true;
-        openVpnProcess.OutputDataReceived += new DataReceivedEventHandler(OpenVpnOutputHandler);
-        openVpnProcess.ErrorDataReceived += new DataReceivedEventHandler(OpenVpnOutputHandler);
+        // Set up OpenVPN process for each .ovpn file
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = openVpnExePath,
+                Arguments = $"--config \"{ovpnFile}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                WorkingDirectory = Path.GetDirectoryName(ovpnFile) // Set CWD to the folder of the .ovpn file
+            }
+        };
 
-        openVpnProcess.Start();
+        process.OutputDataReceived += new DataReceivedEventHandler(OpenVpnOutputHandler);
+        process.ErrorDataReceived += new DataReceivedEventHandler(OpenVpnOutputHandler);
 
-        // Start reading the output asynchronously
-        openVpnProcess.BeginOutputReadLine();
-        openVpnProcess.BeginErrorReadLine();
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        openVpnProcesses.Add(process); // Keep track of the process
     }
 
     private void OpenVpnOutputHandler(object sendingProcess, DataReceivedEventArgs outLine)
     {
         if (!string.IsNullOrEmpty(outLine.Data))
         {
-            // Filter the output based on the specified strings
             foreach (var filter in filterStrings)
             {
                 if (outLine.Data.Contains(filter))
@@ -126,9 +116,27 @@ public partial class VpnTlsService : ServiceBase
         }
     }
 
+    private string FindOpenVpnExecutable()
+    {
+        string[] openVpnExePaths = { 
+            @"C:\Program Files\OpenVPN\bin\openvpn.exe", 
+            @"C:\Program Files (x86)\OpenVPN\bin\openvpn.exe",
+            @"D:\OpenVPN\bin\openvpn.exe",
+            @"E:\Programs\OpenVPN\openvpn.exe"
+        };
+
+        foreach (var path in openVpnExePaths)
+        {
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+        return null;
+    }
+
     public static void Main()
     {
-        // Create and run the service without needing a config file argument
         ServiceBase.Run(new VpnTlsService());
     }
 }
