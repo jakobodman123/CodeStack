@@ -1,3 +1,60 @@
+# Path: Set-NetworkConfig.ps1
+
+# Define Variables
+$InterfaceAlias = "Ethernet" # Replace with your actual interface name
+$LogFile = "C:\Scripts\NetworkConfig.log" # Ensure this directory exists or modify as needed
+
+# Function to Log Messages
+function Write-Log {
+    param (
+        [string]$Message
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $LogFile -Value "$timestamp - $Message"
+}
+
+# Check if the Ethernet cable is connected
+$netAdapter = Get-NetAdapter -Name $InterfaceAlias -ErrorAction SilentlyContinue
+
+if ($null -eq $netAdapter) {
+    Write-Log "Network adapter '$InterfaceAlias' not found."
+    exit 1
+}
+
+if ($netAdapter.Status -eq "Up") {
+    Write-Log "Ethernet is connected. No changes required."
+    exit 0
+} else {
+    Write-Log "Ethernet is disconnected. Applying static IP configurations."
+
+    try {
+        # Remove existing IP addresses (optional: to ensure no conflicts)
+        $currentIPs = Get-NetIPAddress -InterfaceAlias $InterfaceAlias -AddressFamily IPv4
+        foreach ($ip in $currentIPs) {
+            Remove-NetIPAddress -InterfaceAlias $InterfaceAlias -IPAddress $ip.IPAddress -Confirm:$false
+            Write-Log "Removed existing IP address: $($ip.IPAddress)"
+        }
+
+        # Set Primary IP Address
+        New-NetIPAddress -InterfaceAlias $InterfaceAlias -IPAddress "10.8.2.1" -PrefixLength 24 -DefaultGateway "10.8.2.254" -ErrorAction Stop
+        Write-Log "Set Primary IP: 10.8.2.1/24 with Gateway: 10.8.2.254"
+
+        # Add Secondary IP Address
+        New-NetIPAddress -InterfaceAlias $InterfaceAlias -IPAddress "10.83.10.2" -PrefixLength 16 -ErrorAction Stop
+        Write-Log "Added Secondary IP: 10.83.10.2/16"
+
+        # (Optional) Set DNS Servers if required
+        # Set-DnsClientServerAddress -InterfaceAlias $InterfaceAlias -ServerAddresses "8.8.8.8","8.8.4.4"
+        # Write-Log "Configured DNS Servers: 8.8.8.8, 8.8.4.4"
+
+        Write-Log "Static IP configurations applied successfully."
+    }
+    catch {
+        Write-Log "Error applying network configurations: $_"
+        exit 1
+    }
+}
+
 using System;
 using System.Diagnostics;
 using System.ServiceProcess;
