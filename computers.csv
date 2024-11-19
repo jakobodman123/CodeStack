@@ -1,3 +1,48 @@
+@echo off
+
+:: Parameters
+set "InstallationFileName=%1"
+set "InstallationFolderName=%2"
+set "RestartCmd=%3"
+
+:: Set RestartCommandHere based on RestartCmd
+if /I "%RestartCmd%"=="Restart" (
+    set "RestartCommandHere="
+) else (
+    set "RestartCommandHere=/norestart"
+)
+
+:: Full path to the installation file
+set "InstallationFilePath=%InstallationFolderName%\%InstallationFileName%"
+
+:: Check if the file exists
+if not exist "%InstallationFilePath%" (
+    echo ERROR: File "%InstallationFilePath%" not found.
+    exit /b 1
+)
+
+:: Determine file type and execute the correct command
+echo Installing file: %InstallationFilePath%
+for %%F in ("%InstallationFilePath%") do (
+    set "FileExtension=%%~xF"
+)
+
+if /I "%FileExtension%"==".msu" (
+    echo Detected .msu file. Using wusa.exe...
+    wusa.exe "%InstallationFilePath%" %RestartCommandHere%
+) else if /I "%FileExtension%"==".exe" (
+    echo Detected .exe file. Running executable...
+    "%InstallationFilePath%" %RestartCommandHere%
+) else (
+    echo ERROR: Unsupported file type "%FileExtension%". Only .msu and .exe are supported.
+    exit /b 2
+)
+
+echo Installation complete.
+exit /b 0
+
+
+
 computername,status
 PC-01,Online
 PC-02,Offline
