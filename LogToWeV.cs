@@ -1,3 +1,39 @@
+# Define the paths to search
+$paths = @(
+    "$env:ProgramFiles",
+    "$env:ProgramFiles(x86)",
+    "$env:ProgramData"
+)
+
+# Get the SID of TrustedInstaller
+$trustedInstaller = New-Object System.Security.Principal.NTAccount("NT SERVICE\TrustedInstaller")
+$trustedInstallerSid = $trustedInstaller.Translate([System.Security.Principal.SecurityIdentifier]).Value
+
+foreach ($path in $paths) {
+    # Ensure the path exists
+    if (Test-Path $path) {
+        Get-ChildItem -Path $path -Directory -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            $folder = $_
+            try {
+                # Get the ACL of the folder
+                $acl = Get-Acl -LiteralPath $folder.FullName
+                # Get the SID of the owner
+                $ownerSid = ($acl.Owner).Translate([System.Security.Principal.SecurityIdentifier]).Value
+                # Check if the owner is TrustedInstaller
+                if ($ownerSid -eq $trustedInstallerSid) {
+                    Write-Output $folder.FullName
+                }
+            }
+            catch {
+                Write-Warning "Could not get owner for $($folder.FullName): $_"
+            }
+        }
+    } else {
+        Write-Warning "Path not found: $path"
+    }
+}
+
+
 # Define critical groups that must retain access
 $criticalGroups = @(
     "BUILTIN\Administrators",
