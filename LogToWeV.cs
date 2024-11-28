@@ -1,3 +1,110 @@
+# Define critical groups that must retain access
+$criticalGroups = @(
+    "BUILTIN\Administrators",
+    "NT AUTHORITY\SYSTEM",
+    "NT AUTHORITY\LOCAL SERVICE",
+    "NT SERVICE\TrustedInstaller",
+    "NT SERVICE\OfficeClickToRun",
+    "APPLICATION PACKAGE AUTHORITY\ALL APPLICATION PACKAGES",
+    "APPLICATION PACKAGE AUTHORITY\ALL RESTRICTED APPLICATION PACKAGES"
+    # Add any additional service accounts here
+)
+
+# Include 'CREATOR OWNER' if beneficial
+$includeCreatorOwner = $true
+if ($includeCreatorOwner) {
+    $criticalGroups += "CREATOR OWNER"
+}
+
+# Directories to modify
+$directories = @(
+    "$env:ProgramData",
+    "$env:ProgramFiles",
+    "$env:ProgramFiles(x86)"
+)
+
+# Directory to save original ACLs
+$aclBackupDir = "$env:USERPROFILE\ACL_Backups"
+if (!(Test-Path $aclBackupDir)) {
+    New-Item -ItemType Directory -Path $aclBackupDir | Out-Null
+}
+
+# Function to sanitize file names
+function Sanitize-FileName {
+    param([string]$filename)
+    return $filename -replace '[:\\/*?"<>|]', '_'
+}
+
+# Function to process ACLs
+function Remove-NonCriticalACLs {
+    param (
+        [string]$Path
+    )
+
+    Write-Host "Processing: $Path"
+
+    try {
+        # Backup current ACL
+        $acl = Get-Acl -Path $Path
+        $sanitizedPath = Sanitize-FileName($Path)
+        $aclBackupPath = Join-Path -Path $aclBackupDir -ChildPath ($sanitizedPath + ".acl")
+        $acl | Export-Clixml -Path $aclBackupPath
+
+        # Filter out non-critical groups
+        $newAcl = $acl.Access | Where-Object { $criticalGroups -contains $_.IdentityReference.Value }
+
+        # Clear all existing access rules
+        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+
+        # Re-add critical group rules
+        $newAcl | ForEach-Object { $acl.AddAccessRule($_) }
+
+        # Apply new ACL
+        Set-Acl -Path $Path -AclObject $acl
+
+        Write-Host "Updated ACL for: $Path"
+    } catch {
+        Write-Warning "Failed to process $Path: $_"
+    }
+}
+
+# Process directories recursively
+foreach ($dir in $directories) {
+    if (Test-Path $dir) {
+        Get-ChildItem -Path $dir -Recurse -Force | ForEach-Object {
+            if ($_ -is [System.IO.FileInfo] -or $_ -is [System.IO.DirectoryInfo]) {
+                Remove-NonCriticalACLs -Path $_.FullName
+            }
+        }
+    } else {
+        Write-Warning "Directory not found: $dir"
+    }
+}
+
+Write-Host "ACL cleanup complete."
+
+# Instructions to restore original ACLs:
+# To restore the original ACLs, run the following script:
+# Get all backup files in the ACL_Backups directory and restore them to their respective paths.
+
+# Restore-OriginalACLs.ps1
+# --------------------------
+# $aclBackupDir = "$env:USERPROFILE\ACL_Backups"
+# Get-ChildItem -Path $aclBackupDir -Filter "*.acl" | ForEach-Object {
+#     $backupFile = $_.FullName
+#     $sanitizedPath = $_.BaseName
+#     $originalPath = $sanitizedPath -replace '_', '\'
+#     $acl = Import-Clixml -Path $backupFile
+#     try {
+#         Set-Acl -Path $originalPath -AclObject $acl
+#         Write-Host "Restored ACL for: $originalPath"
+#     } catch {
+#         Write-Warning "Failed to restore ACL for $originalPath: $_"
+#     }
+# }
+# --------------------------
+# Save the above code as 'Restore-OriginalACLs.ps1' and run it to restore the ACLs.
+
 # Path: Set-NetworkConfig.ps1
 
 # Define Variables
