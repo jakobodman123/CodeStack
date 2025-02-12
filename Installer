@@ -1,0 +1,594 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Windows.Forms;
+
+namespace InstallerExample
+{
+    // Custom EventArgs for status updates (e.g. for a progress bar)
+    public class StatusUpdateEventArgs : EventArgs
+    {
+        public int ProgressPercentage { get; set; }
+        public string StatusMessage { get; set; }
+    }
+
+    public partial class InstallerForm : Form
+    {
+        // Global variables for user choices:
+        private bool isInstall = true; // Step 1 choice
+        // For Install, multiple targets can be chosen;
+        // for Uninstall, only one target will be used.
+        private List<string> selectedTargets = new List<string>();  // Step 2 choices
+        private string selectedFolder;                                // Step 3 folder (if uninstall, predetermined)
+        private List<string> selectedTxtFilesPaths = new List<string>(); // Step 3: the txt files chosen
+        private List<string> availableTargets = new List<string>();      // List of targets (for Step 2)
+
+        // Panels representing each step.
+        // They will be added into a container panel.
+        private Panel panelStep1;
+        private Panel panelStep2;
+        private Panel panelStep3;
+        private Panel panelStep4;
+        private Panel panelStep5;
+
+        // Container panel for steps (so that the navigation panel at the bottom is always visible)
+        private Panel panelContainer;
+
+        // Navigation panel at the bottom.
+        private Panel navigationPanel;
+
+        // A progress bar (for Step 5)
+        private ProgressBar progressBar;
+
+        // Events for status updates and target refresh
+        public event EventHandler<StatusUpdateEventArgs> StatusUpdate;
+        public event EventHandler RefreshTargetsList;
+
+        public InstallerForm()
+        {
+            InitializeComponent();
+
+            // Create a container panel that fills the form (above the navigation bar)
+            panelContainer = new Panel { Dock = DockStyle.Fill };
+            this.Controls.Add(panelContainer);
+
+            // Create step panels.
+            panelStep1 = new Panel { Dock = DockStyle.Fill };
+            panelStep2 = new Panel { Dock = DockStyle.Fill, Visible = false };
+            panelStep3 = new Panel { Dock = DockStyle.Fill, Visible = false };
+            panelStep4 = new Panel { Dock = DockStyle.Fill, Visible = false };
+            panelStep5 = new Panel { Dock = DockStyle.Fill, Visible = false };
+
+            // Add the step panels to the container.
+            panelContainer.Controls.Add(panelStep1);
+            panelContainer.Controls.Add(panelStep2);
+            panelContainer.Controls.Add(panelStep3);
+            panelContainer.Controls.Add(panelStep4);
+            panelContainer.Controls.Add(panelStep5);
+
+            // Create the bottom navigation panel.
+            navigationPanel = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 50
+            };
+            this.Controls.Add(navigationPanel);
+            InitializeNavigationPanel();
+
+            // Create each step's controls.
+            InitializeStep1();
+            InitializeStep2();
+            InitializeStep3();
+            InitializeStep4();
+            InitializeStep5();
+
+            LoadAvailableTargets(); // Load our targets (Step 2) on init.
+            ShowStep1();            // Start at Step 1.
+        }
+
+        private void InitializeComponent()
+        {
+            this.Text = "Installer";
+            this.Width = 600;
+            this.Height = 500;  // Adjust height to fit the bottom navigation panel.
+        }
+
+        #region Navigation Panel
+
+        /// <summary>
+        /// Initializes the bottom navigation panel with buttons for each step.
+        /// </summary>
+        private void InitializeNavigationPanel()
+        {
+            navigationPanel.Controls.Clear();
+
+            // Create buttons for each step.
+            Button btnStep1 = new Button { Text = "Step 1", Left = 10, Width = 80, Top = 10 };
+            Button btnStep2 = new Button { Text = "Step 2", Left = 100, Width = 80, Top = 10 };
+            Button btnStep3 = new Button { Text = "Step 3", Left = 190, Width = 80, Top = 10 };
+            Button btnStep4 = new Button { Text = "Step 4", Left = 280, Width = 80, Top = 10 };
+            Button btnStep5 = new Button { Text = "Step 5", Left = 370, Width = 80, Top = 10 };
+
+            // Wire up click events.
+            btnStep1.Click += (s, e) => ShowStep1();
+            btnStep2.Click += (s, e) => ShowStep2();
+            btnStep3.Click += (s, e) => ShowStep3();
+            btnStep4.Click += (s, e) => ShowStep4();
+            btnStep5.Click += (s, e) => ShowStep5();
+
+            navigationPanel.Controls.Add(btnStep1);
+            navigationPanel.Controls.Add(btnStep2);
+            navigationPanel.Controls.Add(btnStep3);
+            navigationPanel.Controls.Add(btnStep4);
+            navigationPanel.Controls.Add(btnStep5);
+        }
+
+        #endregion
+
+        #region Step 1: Choose Install/Uninstall
+
+        /// <summary>
+        /// Step 1: Let the user choose Install or Uninstall.
+        /// </summary>
+        private void InitializeStep1()
+        {
+            panelStep1.Controls.Clear();
+
+            Label lbl = new Label
+            {
+                Text = "Step 1: Choose action:",
+                Top = 20,
+                Left = 20,
+                AutoSize = true
+            };
+
+            RadioButton rbInstall = new RadioButton
+            {
+                Text = "Install",
+                Top = 50,
+                Left = 20,
+                Checked = true
+            };
+
+            RadioButton rbUninstall = new RadioButton
+            {
+                Text = "Uninstall",
+                Top = 80,
+                Left = 20
+            };
+
+            Button btnNext = new Button
+            {
+                Text = "Next",
+                Top = 120,
+                Left = 20
+            };
+            btnNext.Click += (s, e) =>
+            {
+                // Save the user choice in a global variable.
+                isInstall = rbInstall.Checked;
+                ShowStep2();
+            };
+
+            panelStep1.Controls.Add(lbl);
+            panelStep1.Controls.Add(rbInstall);
+            panelStep1.Controls.Add(rbUninstall);
+            panelStep1.Controls.Add(btnNext);
+        }
+
+        #endregion
+
+        #region Step 2: Choose Target(s)
+
+        /// <summary>
+        /// Step 2: Display available targets and let the user choose one or more.
+        /// For Install, multiple targets may be chosen. For Uninstall, only one is allowed.
+        /// A refresh button lets the user reload the targets list.
+        /// </summary>
+        private void InitializeStep2()
+        {
+            panelStep2.Controls.Clear();
+
+            Label lbl = new Label
+            {
+                Text = "Step 2: Select target(s):",
+                Top = 20,
+                Left = 20,
+                AutoSize = true
+            };
+
+            // ListBox showing the available targets.
+            // If installing, allow multi-selection.
+            ListBox lbTargets = new ListBox
+            {
+                Top = 50,
+                Left = 20,
+                Width = 200,
+                Height = 100,
+                SelectionMode = isInstall ? SelectionMode.MultiExtended : SelectionMode.One
+            };
+            lbTargets.Items.AddRange(availableTargets.ToArray());
+
+            Button btnRefresh = new Button
+            {
+                Text = "Refresh",
+                Top = 160,
+                Left = 20
+            };
+            btnRefresh.Click += (s, e) =>
+            {
+                RefreshTargets();
+                lbTargets.Items.Clear();
+                lbTargets.Items.AddRange(availableTargets.ToArray());
+            };
+
+            Button btnBack = new Button
+            {
+                Text = "Back",
+                Top = 200,
+                Left = 20
+            };
+            btnBack.Click += (s, e) => ShowStep1();
+
+            Button btnNext = new Button
+            {
+                Text = "Next",
+                Top = 200,
+                Left = 100
+            };
+            btnNext.Click += (s, e) =>
+            {
+                if (lbTargets.SelectedItems.Count == 0)
+                {
+                    MessageBox.Show("Please select at least one target.");
+                    return;
+                }
+
+                selectedTargets.Clear();
+                foreach (var item in lbTargets.SelectedItems)
+                {
+                    selectedTargets.Add(item.ToString());
+                }
+
+                ShowStep3();
+            };
+
+            panelStep2.Controls.Add(lbl);
+            panelStep2.Controls.Add(lbTargets);
+            panelStep2.Controls.Add(btnRefresh);
+            panelStep2.Controls.Add(btnBack);
+            panelStep2.Controls.Add(btnNext);
+        }
+
+        /// <summary>
+        /// Loads available targets. In a real app this might read from a file, registry, etc.
+        /// </summary>
+        private void LoadAvailableTargets()
+        {
+            availableTargets.Clear();
+            availableTargets.Add(@"C:\Path\To\TargetA");
+            availableTargets.Add(@"C:\Path\To\TargetB");
+            availableTargets.Add(@"C:\Path\To\TargetC");
+        }
+
+        /// <summary>
+        /// Refresh the targets list. This method is also wired to raise the RefreshTargetsList event.
+        /// </summary>
+        private void RefreshTargets()
+        {
+            // For demonstration, simply add a new target.
+            availableTargets.Add(@"C:\Path\To\Target" + (char)('D' + availableTargets.Count - 3));
+            RefreshTargetsList?.Invoke(this, EventArgs.Empty);
+        }
+
+        #endregion
+
+        #region Step 3: Choose Folder and Files
+
+        /// <summary>
+        /// Step 3: Let the user choose (or use predetermined) folder and select .txt files.
+        /// If installing, the user can choose the folder. If uninstalling, the folder is predetermined.
+        /// All .txt files in the folder are listed as checkboxes.
+        /// </summary>
+        private void InitializeStep3()
+        {
+            panelStep3.Controls.Clear();
+
+            Label lbl = new Label
+            {
+                Text = "Step 3: Select txt files:",
+                Top = 20,
+                Left = 20,
+                AutoSize = true
+            };
+
+            // Button to choose folder – only shown if installing.
+            Button btnSelectFolder = new Button
+            {
+                Text = "Select Folder",
+                Top = 50,
+                Left = 20,
+                Visible = isInstall
+            };
+            btnSelectFolder.Click += (s, e) =>
+            {
+                using (FolderBrowserDialog fbd = new FolderBrowserDialog())
+                {
+                    if (fbd.ShowDialog() == DialogResult.OK)
+                    {
+                        selectedFolder = fbd.SelectedPath;
+                        // After selecting the folder, load the txt file list.
+                        LoadTxtFiles(panelStep3, startTop: 100);
+                    }
+                }
+            };
+
+            // If uninstalling, use a predetermined folder.
+            if (!isInstall)
+            {
+                selectedFolder = @"C:\PredeterminedFolder"; // Example predetermined folder.
+                LoadTxtFiles(panelStep3, startTop: 100);
+            }
+
+            Button btnBack = new Button
+            {
+                Text = "Back",
+                Top = 300,
+                Left = 20
+            };
+            btnBack.Click += (s, e) => ShowStep2();
+
+            Button btnNext = new Button
+            {
+                Text = "Next",
+                Top = 300,
+                Left = 100
+            };
+            btnNext.Click += (s, e) =>
+            {
+                // Gather the selected files from the checkboxes.
+                selectedTxtFilesPaths.Clear();
+                foreach (Control control in panelStep3.Controls)
+                {
+                    if (control is CheckBox cb && cb.Tag is string filePath)
+                    {
+                        if (cb.Checked)
+                        {
+                            selectedTxtFilesPaths.Add(filePath);
+                        }
+                    }
+                }
+
+                if (selectedTxtFilesPaths.Count == 0)
+                {
+                    MessageBox.Show("Please select at least one txt file.");
+                    return;
+                }
+
+                ShowStep4();
+            };
+
+            panelStep3.Controls.Add(lbl);
+            panelStep3.Controls.Add(btnSelectFolder);
+            panelStep3.Controls.Add(btnBack);
+            panelStep3.Controls.Add(btnNext);
+        }
+
+        /// <summary>
+        /// Loads all .txt files from the selected folder and creates a checkbox for each.
+        /// </summary>
+        /// <param name="panel">The panel in which to add the checkboxes.</param>
+        /// <param name="startTop">The starting top position for the checkboxes.</param>
+        private void LoadTxtFiles(Panel panel, int startTop)
+        {
+            // Remove any existing file checkboxes.
+            var controlsToRemove = panel.Controls.OfType<CheckBox>().Where(cb => cb.Tag is string).ToList();
+            foreach (var cb in controlsToRemove)
+            {
+                panel.Controls.Remove(cb);
+            }
+
+            if (Directory.Exists(selectedFolder))
+            {
+                string[] txtFiles = Directory.GetFiles(selectedFolder, "*.txt");
+                int top = startTop;
+                foreach (string file in txtFiles)
+                {
+                    CheckBox cb = new CheckBox
+                    {
+                        Text = Path.GetFileName(file),
+                        Top = top,
+                        Left = 20,
+                        AutoSize = true,
+                        Tag = file  // Save the full file path in the Tag property.
+                    };
+                    panel.Controls.Add(cb);
+                    top += 25;
+                }
+            }
+            else
+            {
+                MessageBox.Show("Folder does not exist: " + selectedFolder);
+            }
+        }
+
+        #endregion
+
+        #region Step 4: Confirmation
+
+        /// <summary>
+        /// Step 4: Confirmation step. The user reviews their choices and clicks
+        /// the Install/Uninstall button to start the process.
+        /// </summary>
+        private void InitializeStep4()
+        {
+            panelStep4.Controls.Clear();
+
+            // A label to show a summary of the choices.
+            Label lblSummary = new Label
+            {
+                Name = "lblSummary",
+                Top = 20,
+                Left = 20,
+                AutoSize = true
+            };
+
+            Button btnBack = new Button
+            {
+                Text = "Back",
+                Top = 200,
+                Left = 20
+            };
+            btnBack.Click += (s, e) => ShowStep3();
+
+            Button btnConfirm = new Button
+            {
+                Text = isInstall ? "Install" : "Uninstall",
+                Top = 200,
+                Left = 100
+            };
+            btnConfirm.Click += (s, e) =>
+            {
+                // Here you would normally kick off the install/uninstall process.
+                ShowStep5();
+                StartProcess();
+            };
+
+            panelStep4.Controls.Add(lblSummary);
+            panelStep4.Controls.Add(btnBack);
+            panelStep4.Controls.Add(btnConfirm);
+        }
+
+        #endregion
+
+        #region Step 5: Progress Bar
+
+        /// <summary>
+        /// Step 5: Shows a progress bar that updates as the process runs.
+        /// </summary>
+        private void InitializeStep5()
+        {
+            panelStep5.Controls.Clear();
+
+            progressBar = new ProgressBar
+            {
+                Top = 50,
+                Left = 20,
+                Width = 400,
+                Minimum = 0,
+                Maximum = 100
+            };
+            panelStep5.Controls.Add(progressBar);
+
+            // Subscribe to our StatusUpdate event so that progress updates can be handled.
+            this.StatusUpdate += InstallerForm_StatusUpdate;
+        }
+
+        private void InstallerForm_StatusUpdate(object sender, StatusUpdateEventArgs e)
+        {
+            // Update the progress bar safely on the UI thread.
+            if (progressBar.InvokeRequired)
+            {
+                progressBar.Invoke(new Action(() => progressBar.Value = e.ProgressPercentage));
+            }
+            else
+            {
+                progressBar.Value = e.ProgressPercentage;
+            }
+        }
+
+        #endregion
+
+        #region Step Switching Methods
+
+        private void ShowStep1()
+        {
+            panelStep1.Visible = true;
+            panelStep2.Visible = false;
+            panelStep3.Visible = false;
+            panelStep4.Visible = false;
+            panelStep5.Visible = false;
+        }
+
+        private void ShowStep2()
+        {
+            panelStep1.Visible = false;
+            panelStep2.Visible = true;
+            panelStep3.Visible = false;
+            panelStep4.Visible = false;
+            panelStep5.Visible = false;
+
+            // Reinitialize Step 2 (to reflect any updated target list or selection mode)
+            InitializeStep2();
+        }
+
+        private void ShowStep3()
+        {
+            panelStep1.Visible = false;
+            panelStep2.Visible = false;
+            panelStep3.Visible = true;
+            panelStep4.Visible = false;
+            panelStep5.Visible = false;
+
+            InitializeStep3();
+        }
+
+        private void ShowStep4()
+        {
+            panelStep1.Visible = false;
+            panelStep2.Visible = false;
+            panelStep3.Visible = false;
+            panelStep4.Visible = true;
+            panelStep5.Visible = false;
+
+            // Update the confirmation summary.
+            Label lblSummary = panelStep4.Controls.Find("lblSummary", false).FirstOrDefault() as Label;
+            if (lblSummary != null)
+            {
+                lblSummary.Text =
+                    $"Action: {(isInstall ? "Install" : "Uninstall")}\n" +
+                    $"Target(s): {string.Join(", ", selectedTargets)}\n" +
+                    $"Folder: {selectedFolder}\n" +
+                    $"Files:\n{string.Join("\n", selectedTxtFilesPaths.Select(f => Path.GetFileName(f)))}";
+            }
+        }
+
+        private void ShowStep5()
+        {
+            panelStep1.Visible = false;
+            panelStep2.Visible = false;
+            panelStep3.Visible = false;
+            panelStep4.Visible = false;
+            panelStep5.Visible = true;
+        }
+
+        #endregion
+
+        #region Simulated Process
+
+        /// <summary>
+        /// Simulates an installation/uninstallation process by updating progress.
+        /// In a real application this would kick off background work.
+        /// </summary>
+        private async void StartProcess()
+        {
+            // For demonstration, simulate progress updates every 500 ms.
+            for (int i = 0; i <= 100; i += 10)
+            {
+                await System.Threading.Tasks.Task.Delay(500); // simulate work delay
+                OnStatusUpdate(new StatusUpdateEventArgs { ProgressPercentage = i, StatusMessage = $"Progress: {i}%" });
+            }
+        }
+
+        /// <summary>
+        /// Raises the StatusUpdate event and updates the progress bar.
+        /// </summary>
+        protected virtual void OnStatusUpdate(StatusUpdateEventArgs e)
+        {
+            StatusUpdate?.Invoke(this, e);
+        }
+
+        #endregion
+    }
+}
